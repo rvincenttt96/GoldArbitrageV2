@@ -1,0 +1,162 @@
+import requests
+from datetime import datetime
+
+
+from core.models import Quote
+
+
+class MilliGoldClient:
+
+    BASE_URL = "https://milli.gold"
+
+    def __init__(self, username, password, wallet_address):
+
+        self.username = username
+        self.password = password
+        self.wallet_address = wallet_address
+
+        self.wallet_address = wallet_address
+
+        self.session = requests.Session()
+
+        self.session.headers.update({
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-Channel": "MILLI",
+            "X-Platform": "PWA",
+            "X-Client-Version": "1.0.0",
+            "X-Release-Version": "827b1711"
+        })
+
+
+    def login(self):
+
+        response = self.session.post(
+            f"{self.BASE_URL}/api/v1/public/user/v2/login",
+            json={
+                "username": self.username,
+                "password": self.password
+            }
+        )
+
+        data = response.json()
+
+        csrf = response.headers.get("x-csrf-token")
+        if csrf:
+            self.session.headers.update({
+                "x-csrf-token": csrf
+            })
+
+        jwt = self.session.cookies.get("jwtCookie")
+
+        if jwt:
+            self.session.headers.update({
+                
+                "Origin": "https://milli.gold",
+                "Referer": "https://milli.gold/app/trade/buy",
+                "Accept": "application/json, text/plain, */*",
+            })
+
+        print("MILLI LOGIN STATUS:", response.status_code)
+        print("MILLI LOGIN RESPONSE:", data)
+
+        if data.get("code") != 0:
+            raise Exception(
+                f"Milli login failed: {data}"
+            )
+
+        return data
+
+
+    def get_price(self, side):
+
+        response = self.session.get(
+            f"{self.BASE_URL}/api/v1/public/milli-price/external"
+        )
+
+        data = response.json()
+
+        print("MILLI PRICE RESPONSE:", data)
+
+        if data.get("code") != 0:
+            raise Exception(
+                f"Milli price error: {data}"
+            )
+
+        result = data["data"]
+
+        price = int(result["price18"]) * 100
+
+        return Quote(
+            platform="miligold",
+            symbol="GLD_18C_750TMN",
+            side=side,
+            price=price,
+            price_id=0,
+            expires_at=datetime.now(),
+            ttl=0,
+            timestamp=datetime.now()
+        )
+
+
+    def get_balance(self):
+
+        response = self.session.get(
+            f"{self.BASE_URL}/api/v1/account/available-balance"
+        )
+
+        data = response.json()
+
+        print("MILLI BALANCE:", data)
+
+        return data
+
+
+    def init_trade_request(
+        self,
+        milli_amount,
+        order_type
+    ):
+
+        if not self.wallet_address:
+            raise Exception(
+                "wallet address missing"
+            )
+
+
+        response = self.session.post(
+            f"{self.BASE_URL}/api/v1/init-trade-request",
+            json={
+                "milliAmount": milli_amount,
+                "milliWalletAddress": self.wallet_address,
+                "orderType": order_type
+            }
+        )
+
+
+        data = response.json()
+
+        print("MILLI TRADE RESPONSE:", data)
+
+        if data.get("code") != 0:
+            raise Exception(
+                f"Milli trade failed: {data}"
+            )
+
+        return data
+
+
+    def buy(self, milli_amount):
+
+        return self.init_trade_request(
+            milli_amount,
+            "BUY"
+        )
+
+
+    def sell(self, milli_amount):
+
+        return self.init_trade_request(
+            milli_amount,
+            "SELL"
+        )

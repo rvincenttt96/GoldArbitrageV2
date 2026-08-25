@@ -1,0 +1,27 @@
+    def login(self):
+
+        r = self.session.post(
+            self.BASE_URL + '/api/auth/user/login/password',
+            json={
+                'username': self.username,
+                'password': self.password
+            }
+        )
+
+        print("LOGIN STATUS:", r.status_code)
+
+        data = r.json()
+
+        print("LOGIN RESPONSE:")
+        print(data)
+
+        if "token" not in data:
+            raise Exception(
+                f"Login failed: {data}"
+            )
+
+        self.session.headers.update({
+            'Authorization': 'Bearer ' + data['token']
+        })
+
+        return data

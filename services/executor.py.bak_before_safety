@@ -1,0 +1,52 @@
+class Executor:
+
+    def __init__(self, risk_manager):
+
+        self.risk_manager = risk_manager
+
+
+    def execute(
+        self,
+        opportunity,
+        buy_exchange,
+        sell_exchange,
+        buy_portfolio,
+        sell_portfolio
+    ):
+
+        approved = self.risk_manager.check(
+            opportunity,
+            buy_portfolio,
+            sell_portfolio
+        )
+
+        if not approved:
+            return {
+                "status": "rejected",
+                "reason": "risk_check_failed"
+            }
+
+
+        try:
+            buy_order = buy_exchange.buy(
+                opportunity.amount
+            )
+        except Exception as e:
+            print("BUY ERROR:", repr(e))
+            raise
+
+
+        try:
+            sell_order = sell_exchange.sell(
+                opportunity.amount
+            )
+        except Exception as e:
+            print("SELL ERROR:", repr(e))
+            raise
+
+
+        return {
+            "status": "completed",
+            "buy_order": buy_order,
+            "sell_order": sell_order
+        }

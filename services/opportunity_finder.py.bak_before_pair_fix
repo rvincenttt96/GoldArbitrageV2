@@ -1,0 +1,130 @@
+from datetime import datetime
+
+from core.models import Opportunity
+
+from config.settings import (
+    MILLIGOLD_BUY_FEE,
+    MILLIGOLD_SELL_FEE,
+    WALLGOLD_BUY_FEE,
+    WALLGOLD_SELL_FEE,
+)
+
+
+class OpportunityFinder:
+
+
+    def get_buy_fee(self, platform, amount, price):
+
+        value = amount * price
+
+        if platform == "miligold":
+            return value * MILLIGOLD_BUY_FEE
+
+        if platform == "wallgold":
+            return value * WALLGOLD_BUY_FEE
+
+        return 0
+
+
+    def get_sell_fee(self, platform, amount, price):
+
+        value = amount * price
+
+        if platform == "miligold":
+            return value * MILLIGOLD_SELL_FEE
+
+        if platform == "wallgold":
+            billable_amount = max(amount, 0.4)
+            return billable_amount * price * WALLGOLD_SELL_FEE
+
+        return 0
+
+
+    def find(self, scan_result, amount):
+
+        quotes = scan_result["quotes"]
+
+        buy_quotes = [
+            q for q in quotes
+            if q.side == "buy"
+        ]
+
+        sell_quotes = [
+            q for q in quotes
+            if q.side == "sell"
+        ]
+
+
+        if not buy_quotes or not sell_quotes:
+            return None
+
+
+        best_buy = min(
+            buy_quotes,
+            key=lambda x: x.price
+        )
+
+
+        best_sell = max(
+            sell_quotes,
+            key=lambda x: x.price
+        )
+
+
+        if best_buy.platform == best_sell.platform:
+            return None
+
+
+        buy_value = best_buy.price * amount
+        sell_value = best_sell.price * amount
+
+
+        buy_fee = self.get_buy_fee(
+            best_buy.platform,
+            amount,
+            best_buy.price
+        )
+
+
+        sell_fee = self.get_sell_fee(
+            best_sell.platform,
+            amount,
+            best_sell.price
+        )
+
+
+        gross_profit = sell_value - buy_value
+
+
+        net_profit = (
+            sell_value
+            - sell_fee
+            - buy_value
+            - buy_fee
+        )
+
+
+        return Opportunity(
+
+            buy_platform=best_buy.platform,
+
+            sell_platform=best_sell.platform,
+
+            symbol=best_buy.symbol,
+
+            amount=amount,
+
+            buy_price=best_buy.price,
+
+            sell_price=best_sell.price,
+
+            gross_profit=gross_profit,
+
+            buy_fee=buy_fee,
+
+            sell_fee=sell_fee,
+
+            net_profit=net_profit,
+
+            timestamp=datetime.now()
+        )
