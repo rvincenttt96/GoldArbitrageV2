@@ -1,0 +1,199 @@
+# Venue registry.
+#
+# `enabled`  - venue takes part in price scanning.
+# `verified` - a real order has been placed and reconciled against this adapter.
+#              A venue is only tradable when both are true, so a newly wired
+#              venue can stream prices without being able to lose money.
+#
+# Amounts are milligrams. Rates are fractions, not percent, and are quoted as
+# strings so they survive into Decimal without passing through binary float.
+
+[platforms.wallgold]
+display_name = "WallGold"
+enabled = true
+verified = true
+adapter = "adapters.wallgold.client:WallGoldClient"
+capabilities = ["firm_quote", "order_status"]
+# The API reports ttl directly and it runs around 13s, not 30.
+quote_ttl_seconds = 13.0
+
+[platforms.wallgold.buy_fee]
+rate = "0.005"
+basis = "cash"
+
+[platforms.wallgold.sell_fee]
+rate = "0.005"
+basis = "cash"
+# Sells are billed as if they weighed at least 0.4 g. A 0.1 g sell therefore
+# pays an effective 2%, four times the headline rate.
+min_billable_mg = 400
+
+[platforms.wallgold.limits]
+# From /api/v1/markets: minQty 0.007 g, stepSize 3 decimals, maxQty 10000 g.
+min_order_mg = 7
+step_mg = 1
+max_order_mg = 10000000
+
+[platforms.wallgold.treasury]
+min_cash_tmn = "11000000"
+min_gold_mg = 500
+target_cash_tmn = "22000000"
+target_gold_mg = 1500
+
+# ---------------------------------------------------------------------------
+
+[platforms.goldika]
+display_name = "Goldika"
+enabled = true
+# Buy and sell payloads disagree about units (buy sends grams, sell sends
+# centigrams) and that has never been settled with a real order.
+verified = false
+adapter = "adapters.goldika.client:GoldikaClient"
+capabilities = ["two_sided_quote", "firm_quote"]
+quote_ttl_seconds = 30.0
+
+[platforms.goldika.buy_fee]
+rate = "0.012"
+basis = "cash"
+
+[platforms.goldika.sell_fee]
+rate = "0.012"
+basis = "cash"
+
+[platforms.goldika.limits]
+min_order_mg = 10
+# Sell payload is denominated in centigrams, so orders move in 10 mg steps.
+step_mg = 10
+
+[platforms.goldika.treasury]
+min_cash_tmn = "11000000"
+min_gold_mg = 500
+target_cash_tmn = "22000000"
+target_gold_mg = 1500
+
+# ---------------------------------------------------------------------------
+
+[platforms.miligold]
+display_name = "MilliGold"
+# Switched off at the owner's call: its quote sits ~2.5% below every other venue
+# around the clock, which reads as an off-market reference rather than a price
+# that can be traded at size. Re-enable only once a real fill has shown the
+# quote is executable.
+enabled = false
+verified = false
+adapter = "adapters.miligold.client:MilliGoldClient"
+# Publishes one reference price rather than a bid and an ask; the spread is
+# expressed entirely through the commission. Not two_sided_quote.
+capabilities = ["firm_quote", "invoice_flow"]
+quote_ttl_seconds = 30.0
+
+[platforms.miligold.buy_fee]
+rate = "0.005"
+# Commission is billed as a weight of gold, truncated to whole milligrams, with
+# a floor of one. Measured against /api/v1/trade/commission: 100 mg costs 1 mg
+# (1.0%), 500 mg costs 2 mg (0.4%), 1000 mg costs 5 mg (0.5%). A 200 mg minimum
+# billable weight reproduces that floor exactly.
+basis = "gold"
+min_billable_mg = 200
+
+[platforms.miligold.sell_fee]
+rate = "0.005"
+basis = "gold"
+min_billable_mg = 200
+
+[platforms.miligold.limits]
+min_order_mg = 1
+step_mg = 1
+
+[platforms.miligold.treasury]
+min_cash_tmn = "11000000"
+min_gold_mg = 500
+target_cash_tmn = "22000000"
+target_gold_mg = 1500
+
+# ---------------------------------------------------------------------------
+
+[platforms.melligold]
+display_name = "MelliGold"
+# Price endpoint is public and needs no login; trading needs an SMS code.
+enabled = true
+verified = false
+adapter = "adapters.melligold.client:MelliGoldClient"
+# Publishes one reference price for both sides, like MilliGold and WallGold.
+capabilities = []
+quote_ttl_seconds = 30.0
+
+# Measured against invoice 7075872 (0.019 g bought 2026-09-01), not taken from
+# the published fee page. That page says the floor is 2.5 سوت; the invoice
+# charged 1 سوت, so the page is either outdated or means something else.
+#
+#   unit_price       22,077,668
+#   0.019 g of gold     419,476
+#   fee_price            22,078   = exactly 1 سوت
+#   maintenance_cost         38
+#   total_price         441,592
+#
+# So the commission is billed in whole milligrams of gold with a floor of one,
+# the same shape as MilliGold. A 200 mg minimum billable weight reproduces that
+# floor exactly.
+[platforms.melligold.buy_fee]
+rate = "0.005"
+basis = "gold"
+min_billable_mg = 200
+# maintenance_cost from the same invoice. A single observation, so whether it is
+# flat or proportional is not yet established; at 38 toman it barely matters.
+fixed_tmn = "38"
+
+[platforms.melligold.sell_fee]
+rate = "0.005"
+basis = "gold"
+min_billable_mg = 200
+fixed_tmn = "38"
+
+[platforms.melligold.limits]
+# From lower_amounts in the price response: buy_gold 0.001, sell_gold 0.01.
+min_order_mg = 10
+step_mg = 1
+
+[platforms.melligold.treasury]
+min_cash_tmn = "11000000"
+min_gold_mg = 500
+target_cash_tmn = "22000000"
+target_gold_mg = 1500
+
+# ---------------------------------------------------------------------------
+
+[platforms.talasea]
+display_name = "Talasea"
+# The venue referred to as طلا۳۰; "سی" is thirty. Price endpoint is public and
+# login takes a password, so this is the one venue here needing no SMS code.
+enabled = true
+# Prices, login and balances are confirmed against the live API. Order placement
+# is written from the observed call shape but has never been run, and the
+# account has never traded (orderCount 0), so it stays out of the router.
+verified = false
+adapter = "adapters.talasea.client:TalaseaClient"
+capabilities = []
+quote_ttl_seconds = 30.0
+
+[platforms.talasea.buy_fee]
+# 1%, read straight off the price endpoint's feeTable. Twice what the other
+# venues charge, which makes a 2% round trip and rules it out of most routes.
+rate = "0.01"
+basis = "cash"
+
+[platforms.talasea.sell_fee]
+rate = "0.01"
+basis = "cash"
+
+[platforms.talasea.limits]
+# minOrderValue and minSellOrderValue are 100,000 TMN of notional rather than a
+# weight, so this floor is an approximation at current prices.
+min_order_mg = 5
+step_mg = 1
+
+[platforms.talasea.treasury]
+min_cash_tmn = "11000000"
+min_gold_mg = 500
+target_cash_tmn = "22000000"
+target_gold_mg = 1500

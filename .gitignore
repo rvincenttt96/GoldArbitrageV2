@@ -1,17 +1,12 @@
 __pycache__/
 *.py[cod]
-*.log
-
+.pytest_cache/
+.ruff_cache/
 .venv/
 venv/
-node_modules/
-.wrangler/
 
 .env
-*.har
+*.log
 
-# Backups belong in git history, not next to the file they shadow.
-*.bak
-*.bak_*
-*_backup*.py
-*backup_before*
+# Never commit captured network traces: they contain live session tokens.
+*.har

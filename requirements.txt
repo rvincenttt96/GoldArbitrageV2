@@ -1,2 +1,3 @@
-requests
-python-dotenv
+# Core needs nothing beyond the standard library (tomllib requires Python 3.11+).
+# Adapters talk HTTP; tests do not.
+requests>=2.32,<3
