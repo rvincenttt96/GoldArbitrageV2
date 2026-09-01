@@ -121,9 +121,12 @@ target_gold_mg = 1500
 
 [platforms.melligold]
 display_name = "MelliGold"
-# Price endpoint is public and needs no login; trading needs an SMS code.
+# Price endpoint is public and needs no login. Trading needs a session, but the
+# refresh token rotates weekly so the SMS code is a one-time cost.
 enabled = true
-verified = false
+# Both sides settled 2026-09-01 with real orders 7075872 (buy) and 7076276
+# (sell), and the fee model below is pinned to those invoices.
+verified = true
 adapter = "adapters.melligold.client:MelliGoldClient"
 # Publishes one reference price for both sides, like MilliGold and WallGold.
 capabilities = []

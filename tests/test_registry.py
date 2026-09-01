@@ -52,14 +52,21 @@ def test_miligold_is_switched_off():
     assert not spec.tradable
 
 
-def test_new_venues_scan_but_cannot_trade():
-    # Both have a public price endpoint, so they feed the recorder. Neither has
-    # had an order placed through it, so neither may be routed to.
-    specs = load_platforms(CONFIG)
-    for name in ("melligold", "talasea"):
-        assert specs[name].enabled
-        assert not specs[name].verified
-        assert not specs[name].tradable
+def test_talasea_scans_but_cannot_trade():
+    # Its price endpoint is public so it feeds the recorder, but no order has
+    # ever gone through it, so it must not be routed to.
+    spec = load_platforms(CONFIG)["talasea"]
+    assert spec.enabled
+    assert not spec.verified
+    assert not spec.tradable
+
+
+def test_melligold_is_tradable_after_a_real_round_trip():
+    spec = load_platforms(CONFIG)["melligold"]
+    assert spec.tradable
+    # The floors differ by side, which the invoices established.
+    assert spec.buy_fee.min_billable_mg == 200
+    assert spec.sell_fee.min_billable_mg == 400
 
 
 def test_goldika_units_are_settled_and_it_is_tradable():
