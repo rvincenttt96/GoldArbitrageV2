@@ -45,25 +45,31 @@ target_gold_mg = 1500
 [platforms.goldika]
 display_name = "Goldika"
 enabled = true
-# Buy and sell payloads disagree about units (buy sends grams, sell sends
-# centigrams) and that has never been settled with a real order.
-verified = false
+# Settled 2026-09-01 with real orders 1829431 (buy) and 1829432 (sell): both
+# sides take whole milligrams, and neither charges anything beyond the spread.
+verified = true
 adapter = "adapters.goldika.client:GoldikaClient"
 capabilities = ["two_sided_quote", "firm_quote"]
 quote_ttl_seconds = 30.0
 
+# No commission at all. Buying 5 mg cost 1,110,762 rial against a quote of
+# 222,152,564 rial/gram, and selling 5 mg returned 1,084,420 against a quote of
+# 216,884,124 - both exact to the rial. The 1.2% that used to sit here was
+# double-counting: Goldika's entire cost is its 2.37% spread, which the two-sided
+# quote already expresses.
 [platforms.goldika.buy_fee]
-rate = "0.012"
+rate = "0"
 basis = "cash"
 
 [platforms.goldika.sell_fee]
-rate = "0.012"
+rate = "0"
 basis = "cash"
 
 [platforms.goldika.limits]
-min_order_mg = 10
-# Sell payload is denominated in centigrams, so orders move in 10 mg steps.
-step_mg = 10
+# Both payloads take whole milligrams. A fractional amount is refused with
+# "مقدار طلا معتبر نیست".
+min_order_mg = 1
+step_mg = 1
 
 [platforms.goldika.treasury]
 min_cash_tmn = "11000000"
@@ -123,32 +129,29 @@ adapter = "adapters.melligold.client:MelliGoldClient"
 capabilities = []
 quote_ttl_seconds = 30.0
 
-# Measured against invoice 7075872 (0.019 g bought 2026-09-01), not taken from
-# the published fee page. That page says the floor is 2.5 سوت; the invoice
-# charged 1 سوت, so the page is either outdated or means something else.
+# Measured against a real round trip on 2026-09-01, not the published fee page.
+# That page says the floor is 2.5 سوت for both sides; neither invoice agrees.
 #
-#   unit_price       22,077,668
-#   0.019 g of gold     419,476
-#   fee_price            22,078   = exactly 1 سوت
-#   maintenance_cost         38
-#   total_price         441,592
+#   buy  7075872   0.019 g   fee_price 22,078 = 1 سوت   maintenance 38
+#   sell 7076276   0.019 g   fee_price 44,075 = 2 سوت   maintenance  0
 #
-# So the commission is billed in whole milligrams of gold with a floor of one,
-# the same shape as MilliGold. A 200 mg minimum billable weight reproduces that
-# floor exactly.
+# So the commission is billed in whole milligrams of gold, the floors differ by
+# side, and the maintenance charge is buy-only. Minimum billable weights of
+# 200 mg and 400 mg reproduce the two floors exactly.
+#
+# The round trip cost 66,953 TMN on 419,476 of notional, which is 16%. That is
+# the floors talking, not the rate: at half a gram the same trip costs about 1%.
 [platforms.melligold.buy_fee]
 rate = "0.005"
 basis = "gold"
 min_billable_mg = 200
-# maintenance_cost from the same invoice. A single observation, so whether it is
-# flat or proportional is not yet established; at 38 toman it barely matters.
 fixed_tmn = "38"
 
 [platforms.melligold.sell_fee]
 rate = "0.005"
 basis = "gold"
-min_billable_mg = 200
-fixed_tmn = "38"
+# Twice the buy floor. Selling small on MelliGold is dearer than buying small.
+min_billable_mg = 400
 
 [platforms.melligold.limits]
 # From lower_amounts in the price response: buy_gold 0.001, sell_gold 0.01.

@@ -62,18 +62,23 @@ def test_new_venues_scan_but_cannot_trade():
         assert not specs[name].tradable
 
 
-def test_goldika_is_enabled_but_not_tradable_until_units_are_settled():
+def test_goldika_units_are_settled_and_it_is_tradable():
+    # Real orders 1829431 and 1829432 established that both sides take whole
+    # milligrams, which is what cleared it to trade.
     spec = load_platforms(CONFIG)["goldika"]
     assert spec.enabled
-    assert not spec.verified
-    assert not spec.tradable
+    assert spec.verified
+    assert spec.tradable
+    assert spec.limits.step_mg == 1
+    assert spec.limits.min_order_mg == 1
 
 
-def test_goldika_orders_step_in_centigrams():
-    limits = load_platforms(CONFIG)["goldika"].limits
-    assert limits.step_mg == 10
-    assert limits.clamp(155) == 150
-    assert limits.clamp(5) == 0
+def test_goldika_charges_nothing_beyond_its_spread():
+    # Buying 5mg cost the quoted price to the rial, and selling 5mg returned it.
+    # The 1.2% that used to sit here was double-counting the spread.
+    spec = load_platforms(CONFIG)["goldika"]
+    assert spec.buy_fee.rate == 0
+    assert spec.sell_fee.rate == 0
 
 
 def test_rate_outside_unit_interval_is_rejected(tmp_path):

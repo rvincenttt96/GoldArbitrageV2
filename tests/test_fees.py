@@ -53,41 +53,52 @@ def test_zero_rate_is_free():
     assert fee_tmn(FeeSpec(), 500, PRICE) == Decimal(0)
 
 
-def test_melligold_fee_matches_the_real_invoice():
-    """Pinned to invoice 7075872: 0.019 g bought on 2026-09-01.
+def test_melligold_fees_match_a_real_round_trip():
+    """Pinned to invoices 7075872 (buy) and 7076276 (sell), both 0.019 g.
 
-    The published fee page claims a 2.5 سوت floor. The invoice charged 1 سوت,
-    so the model follows the invoice. This is why a venue stays unverified until
-    a real order has gone through it.
+    The published fee page claims a 2.5 سوت floor on both sides. The buy was
+    charged 1 سوت and the sell 2 سوت, so the model follows the invoices. This is
+    why a venue stays unverified until real orders have gone through it.
     """
-    spec = FeeSpec(
-        rate=Decimal("0.005"),
-        basis=FeeBasis.GOLD,
-        min_billable_mg=200,
-        fixed_tmn=Decimal(38),
+    buy = FeeSpec(
+        rate=Decimal("0.005"), basis=FeeBasis.GOLD,
+        min_billable_mg=200, fixed_tmn=Decimal(38),
     )
-    price = Decimal(22_077_668)
+    sell = FeeSpec(rate=Decimal("0.005"), basis=FeeBasis.GOLD, min_billable_mg=400)
 
-    # fee_price 22,078 is one milligram of gold; maintenance_cost adds 38.
-    charged = fee_tmn(spec, 19, price)
-    assert charged.quantize(Decimal("1")) == Decimal(22_116)
+    buy_price = Decimal(22_077_668)
+    sell_price = Decimal(22_037_588)
 
-    # Total on the invoice: gold + fee + maintenance. The venue rounds each line
-    # to the toman before summing, so the model lands within one toman of it.
-    # One invoice is not enough to pin down the rounding rule, and at this
-    # magnitude guessing it would be over-fitting.
-    gold_value = Decimal(19) * price / 1000
-    assert abs(gold_value + charged - Decimal(441_592)) <= 1
+    # fee_price 22,078 is one milligram; maintenance_cost adds 38.
+    assert fee_tmn(buy, 19, buy_price).quantize(Decimal("1")) == Decimal(22_116)
+    # fee_price 44,075 is two milligrams, and sells carry no maintenance charge.
+    assert fee_tmn(sell, 19, sell_price).quantize(Decimal("1")) == Decimal(44_075)
+
+    # The venue rounds each line to the toman before summing, so the model lands
+    # within a toman. One pair of invoices cannot pin down the rounding rule and
+    # guessing it would be over-fitting.
+    assert abs(Decimal(19) * buy_price / 1000 + fee_tmn(buy, 19, buy_price)
+               - Decimal(441_592)) <= 1
+    assert abs(Decimal(19) * sell_price / 1000 - fee_tmn(sell, 19, sell_price)
+               - Decimal(374_639)) <= 1
 
 
-def test_melligold_effective_rate_falls_away_with_size():
-    """The one-milligram floor is what punishes small tickets, not the rate."""
-    spec = FeeSpec(rate=Decimal("0.005"), basis=FeeBasis.GOLD, min_billable_mg=200)
-    price = Decimal(22_077_668)
+def test_melligold_round_trip_is_ruinous_small_and_ordinary_large():
+    """The floors are what punish small tickets, not the rate.
 
-    assert effective_rate(spec, 19, price) > Decimal("0.05")
-    assert effective_rate(spec, 500, price) == pytest.approx(Decimal("0.004"))
-    assert effective_rate(spec, 1000, price) == pytest.approx(Decimal("0.005"))
+    The measured 19 mg round trip cost 66,953 on 419,476 of notional. The same
+    trip at half a gram costs about 1%, which is where MelliGold becomes usable.
+    """
+    buy = FeeSpec(rate=Decimal("0.005"), basis=FeeBasis.GOLD, min_billable_mg=200)
+    sell = FeeSpec(rate=Decimal("0.005"), basis=FeeBasis.GOLD, min_billable_mg=400)
+    price = Decimal(22_050_000)
+
+    def round_trip(mg):
+        notional = Decimal(mg) * price / 1000
+        return (fee_tmn(buy, mg, price) + fee_tmn(sell, mg, price)) / notional
+
+    assert round_trip(19) > Decimal("0.15")
+    assert round_trip(500) == pytest.approx(Decimal("0.009"), abs=Decimal("0.002"))
 
 
 def test_wallgold_fee_matches_the_real_fill():

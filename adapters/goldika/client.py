@@ -3,11 +3,17 @@
 The only venue here that publishes a genuine bid and ask. Its round trip costs
 about 4.7% though, so it rarely enters a profitable route.
 
-**Buying is refused by this adapter.** The original code sent grams on the buy
-payload and centigrams on the sell payload, and which one the API actually wants
-was never established. If the buy side expects centigrams, `buy(500)` would
-purchase five milligrams rather than half a gram. Until one small real order
-settles it, `buy` raises instead of guessing.
+Two things were settled on 2026-09-01 with real orders, and the original code had
+both wrong:
+
+* **Both sides take whole milligrams.** Order 1829431 sent ``amount: 5`` and
+  received 5 mg. The old code sent grams on buy and centigrams on sell, so a
+  half-gram buy would have asked for 0.5 mg and a half-gram sell for 50 mg.
+  Fractional amounts are refused outright with "مقدار طلا معتبر نیست".
+* **There is no commission.** Buying 5 mg cost 1,110,762 rial against a quote of
+  222,152,564 rial/gram, and selling 5 mg returned 1,084,420 against 216,884,124
+  - both exact to the rial. The 1.2% the old config charged was double-counting;
+  the whole cost is the 2.37% spread that the two-sided quote already shows.
 """
 
 from __future__ import annotations
@@ -92,37 +98,27 @@ class GoldikaClient(GoldAdapter):
             int(data["gold"]["total"]["spendable"]),
         )
 
-    def buy(self, amount_mg: int) -> OrderResult:
-        raise AdapterError(
-            "Goldika buy is disabled: the amount unit on the buy payload has "
-            "never been confirmed. Settle it with one small real order first."
-        )
+    def _order(self, side: str, amount_mg: int) -> OrderResult:
+        quote = self.get_quote(side)
 
-    def sell(self, amount_mg: int) -> OrderResult:
-        quote = self.get_quote("sell")
-
-        # The sell payload is denominated in centigrams, which is why Goldika
-        # orders move in 10 mg steps.
-        centigrams, remainder = divmod(amount_mg, 10)
-        if remainder:
-            raise AdapterError(f"Goldika sell needs a multiple of 10mg, got {amount_mg}")
+        body = {
+            "action": side,
+            # Whole milligrams on both sides. A fraction is refused.
+            "amount": int(amount_mg),
+            "discount_ids": [],
+            "discountIds": [],
+            "priceId": int(quote.price_id),
+        }
+        if side == "sell":
+            body["total"] = int(quote.price_tmn_per_gram * amount_mg / MG_PER_GRAM)
 
         try:
             response = self.session.post(
-                f"{self.BASE_URL}/api/v1/exchanges/sell",
-                json={
-                    "action": "sell",
-                    "amount": centigrams,
-                    "discount_ids": [],
-                    "discountIds": [],
-                    "priceId": int(quote.price_id),
-                    "total": int(quote.price_tmn_per_gram * amount_mg / MG_PER_GRAM),
-                },
-                timeout=(5, 25),
+                f"{self.BASE_URL}/api/v1/exchanges/{side}", json=body, timeout=(5, 25)
             )
         except requests.RequestException as exc:
             raise UncertainExecutionError(
-                f"Goldika sell network state is uncertain: {exc!r}"
+                f"Goldika {side} network state is uncertain: {exc!r}"
             ) from exc
 
         payload = response.json()
@@ -130,14 +126,28 @@ class GoldikaClient(GoldAdapter):
         order_id = data.get("id") if isinstance(data, dict) else None
         if not response.ok or order_id is None:
             # An unrecognised shape is a failure. Assuming otherwise means
-            # believing we sold gold that we still hold.
-            raise AdapterError(f"Goldika sell not confirmed: {payload}")
+            # believing we traded when we did not.
+            raise AdapterError(f"Goldika {side} not confirmed: {payload}")
+
+        # up_amount is the gold leg on a buy and the rial leg on a sell, so the
+        # filled weight is read from whichever side carries egold.
+        filled_mg = amount_mg
+        if data.get("up_unit") == "egold":
+            filled_mg = int(data["up_amount"])
+        elif data.get("down_unit") == "egold":
+            filled_mg = abs(int(data["down_amount"]))
 
         return OrderResult(
             platform=self.name,
             order_id=str(order_id),
-            side="sell",
-            amount_mg=amount_mg,
-            filled_price=quote.price_tmn_per_gram,
+            side=side,
+            amount_mg=filled_mg,
+            filled_price=Decimal(str(data.get("named_price", 0))) / 10 or None,
             raw=payload,
         )
+
+    def buy(self, amount_mg: int) -> OrderResult:
+        return self._order("buy", amount_mg)
+
+    def sell(self, amount_mg: int) -> OrderResult:
+        return self._order("sell", amount_mg)

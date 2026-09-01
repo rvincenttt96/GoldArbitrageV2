@@ -146,9 +146,10 @@ def test_size_search_evaluates_the_fee_kink():
 
 def test_size_search_respects_the_coarser_step_of_the_pair():
     finder = OpportunityFinder(SPECS)
-    # Goldika moves in 10 mg steps, so every size for a Goldika route must too.
-    sizes = finder.candidate_sizes(SPECS["miligold"], SPECS["goldika"], 497)
-    assert sizes and all(mg % 10 == 0 for mg in sizes)
+    # MelliGold's minimum sell is 10 mg, so every size for that route must clear
+    # it and sit on the shared grid.
+    sizes = finder.candidate_sizes(SPECS["wallgold"], SPECS["melligold"], 497)
+    assert sizes and all(mg >= SPECS["melligold"].limits.min_order_mg for mg in sizes)
 
 
 def test_inventory_caps_the_order_size():
