@@ -38,7 +38,7 @@ from services.opportunity_finder import (
     ScanResult,
     StrategyLimits,
 )
-from services.telegram import format_market_report, format_trade_signal, send_message
+from services.telegram import format_trade_signal, send_message
 from services.treasury import find_shortfalls, format_alert, plan_transfers
 
 log = logging.getLogger("paper")
@@ -56,11 +56,6 @@ OPENING_GOLD_MG = 2_000
 #: passed. Without it a persistent edge writes a row every few seconds and the
 #: table stops describing decisions.
 SIGNAL_COOLDOWN_SECONDS = 300
-
-#: How often the channel gets a market snapshot even when nothing is tradable.
-#: Silence is ambiguous: it looks the same whether the bot is watching a flat
-#: market or has quietly died.
-MARKET_REPORT_SECONDS = 1800
 
 #: Treasury alerts repeat no more often than this. A balance stays low until
 #: somebody moves money, which takes hours, so alerting every loop would train
@@ -252,7 +247,6 @@ class PaperTrader:
         self.ticks = ticks
         self.finder = OpportunityFinder(specs, limits or StrategyLimits())
         self.book = PaperBook.load(paper, specs)
-        self.last_quotes: list[Quote] = []
         self._last_logged: dict[tuple[str, str], float] = {}
 
     def step(
@@ -260,7 +254,6 @@ class PaperTrader:
     ) -> tuple[GradedOpportunity | None, ScanResult, str]:
         """One scan. Returns the signal, the full result, and any funding block."""
         ts, quotes = latest_quotes(self.ticks, self.specs)
-        self.last_quotes = quotes
         if not quotes:
             return None, ScanResult(None, []), ""
 
@@ -321,12 +314,6 @@ def main() -> int:
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--telegram", action="store_true", help="announce signals")
     parser.add_argument(
-        "--report-interval",
-        type=float,
-        default=MARKET_REPORT_SECONDS,
-        help="seconds between market snapshots posted to the channel; 0 disables",
-    )
-    parser.add_argument(
         "--balances",
         type=Path,
         help="JSON of live balances, refreshed by scripts/fetch_balances.py; "
@@ -347,7 +334,6 @@ def main() -> int:
     log.info("paper trading %d venues: %s", len(specs), ", ".join(sorted(specs)))
 
     watcher = TreasuryWatcher(specs, announce=args.telegram)
-    last_report = 0.0
     running = True
 
     def stop(*_):
@@ -373,15 +359,6 @@ def main() -> int:
                     _announce(graded, block)
             elif args.once:
                 log.info("no signal; reasons: %s", json.dumps(result.reason_counts()))
-
-            if (
-                args.telegram
-                and args.report_interval > 0
-                and trader.last_quotes
-                and time.time() - last_report >= args.report_interval
-            ):
-                last_report = time.time()
-                _post_market_report(specs, trader.last_quotes)
         except Exception:
             log.exception("paper step failed")
 
@@ -446,14 +423,6 @@ class TreasuryWatcher:
                 log.exception("treasury alert failed to send")
 
         return text
-
-
-def _post_market_report(specs: dict[str, PlatformSpec], quotes: list[Quote]) -> None:
-    try:
-        send_message(format_market_report(quotes, specs))
-        log.info("posted market report")
-    except Exception:
-        log.exception("market report failed to send")
 
 
 def _announce(graded: GradedOpportunity, block: str) -> None:
