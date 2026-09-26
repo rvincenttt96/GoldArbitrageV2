@@ -39,7 +39,6 @@ from services.opportunity_finder import (
     StrategyLimits,
 )
 from services.telegram import format_trade_signal, send_message
-from services.treasury import find_shortfalls, format_alert, plan_transfers
 
 log = logging.getLogger("paper")
 
@@ -56,11 +55,6 @@ OPENING_GOLD_MG = 2_000
 #: passed. Without it a persistent edge writes a row every few seconds and the
 #: table stops describing decisions.
 SIGNAL_COOLDOWN_SECONDS = 300
-
-#: Treasury alerts repeat no more often than this. A balance stays low until
-#: somebody moves money, which takes hours, so alerting every loop would train
-#: the reader to ignore them.
-TREASURY_COOLDOWN_SECONDS = 6 * 3600
 
 
 SCHEMA = """
@@ -317,7 +311,7 @@ def main() -> int:
         "--balances",
         type=Path,
         help="JSON of live balances, refreshed by scripts/fetch_balances.py; "
-             "enables the real-inventory check and treasury alerts",
+             "enables the real-inventory check on each signal",
     )
     args = parser.parse_args()
 
@@ -333,7 +327,6 @@ def main() -> int:
 
     log.info("paper trading %d venues: %s", len(specs), ", ".join(sorted(specs)))
 
-    watcher = TreasuryWatcher(specs, announce=args.telegram)
     running = True
 
     def stop(*_):
@@ -347,8 +340,6 @@ def main() -> int:
         started = time.time()
         try:
             real = load_balances(args.balances) if args.balances else None
-            if real:
-                watcher.check(real)
             graded, result, block = trader.step(real)
             if graded is not None:
                 log.info(
@@ -388,41 +379,6 @@ def load_balances(path: Path) -> dict[str, Inventory] | None:
         name: Inventory(name, Decimal(str(v["cash_tmn"])), int(v["gold_mg"]), now)
         for name, v in raw.items()
     }
-
-
-class TreasuryWatcher:
-    """Alerts when a venue can no longer fund its side of a trade."""
-
-    def __init__(self, specs: dict[str, PlatformSpec], announce: bool = False):
-        self.specs = specs
-        self.announce = announce
-        self._last_sent = 0.0
-        self._last_signature: tuple = ()
-
-    def check(self, inventories: dict[str, Inventory]) -> str:
-        shortfalls = find_shortfalls(self.specs, inventories)
-        if not shortfalls:
-            self._last_signature = ()
-            return ""
-
-        text = format_alert(shortfalls, plan_transfers(self.specs, inventories, shortfalls))
-
-        # Re-send early when a *new* venue drops below its line; otherwise wait
-        # out the cooldown so a standing shortfall does not become background
-        # noise the reader stops seeing.
-        signature = tuple(sorted((s.platform, str(s.asset)) for s in shortfalls))
-        changed = signature != self._last_signature
-        due = time.time() - self._last_sent >= TREASURY_COOLDOWN_SECONDS
-
-        if self.announce and (changed or due):
-            try:
-                send_message(text)
-                self._last_sent = time.time()
-                self._last_signature = signature
-            except Exception:
-                log.exception("treasury alert failed to send")
-
-        return text
 
 
 def _announce(graded: GradedOpportunity, block: str) -> None:
