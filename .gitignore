@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules/
+.wrangler/
+
+.env
+.env.*
+!.env.example
+*.log
+
+# Local login/session state — never commit.
+*session*.json
+.sessions/
+sessions/
+
+# Never commit captured network traces: they contain live session tokens.
+*.har
+
+# Backups and scratch
+*.bak
+*.bak_*
+*_backup*.py
+*backup_before*
